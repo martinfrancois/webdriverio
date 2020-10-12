@@ -1,11 +1,34 @@
 import logger from '@wdio/logger'
+import WDIOReporter from '../../wdio-reporter/build'
+import SuiteStats from '../../wdio-reporter/build/stats/suite'
+import TestStats from '../../wdio-reporter/build/stats/test'
+import CustomReporterResult = jasmine.CustomReporterResult
 
 const log = logger('@wdio/jasmine-framework')
 
 const STACKTRACE_FILTER = /(node_modules(\/|\\)(\w+)*|@wdio\/sync\/(build|src)|- - - - -)/g
 
-export default class JasmineReporter {
-    constructor (reporter, params) {
+interface JasmineReporterParams {
+    cleanStack: boolean
+    cid: string
+    capabilities: any
+    specs: any
+}
+
+export default class JasmineReporter implements jasmine.CustomReporter {
+    private cid: string;
+    private capabilities: any;
+    private specs: any;
+    private shouldCleanStack: any;
+    private parent: any[];
+    private failedCount: number;
+    private startedTest: null;
+    private startedSuite: SuiteStats | null;
+    private reporter: WDIOReporter;
+    private suiteStart: Date | null = null;
+    private testStart: Date | null = null;
+
+    constructor (reporter: WDIOReporter, params: JasmineReporterParams) {
         this.reporter = reporter
 
         this.cid = params.cid
@@ -18,7 +41,7 @@ export default class JasmineReporter {
         this.startedSuite = null
     }
 
-    suiteStarted (suite) {
+    suiteStarted (suite: SuiteStats & CustomReporterResult) {
         this.suiteStart = new Date()
         suite.type = 'suite'
         suite.start = new Date()
@@ -32,7 +55,7 @@ export default class JasmineReporter {
         })
     }
 
-    specStarted (test) {
+    specStarted (test: TestStats & CustomReporterResult) {
         this.testStart = new Date()
         test.type = 'test'
         test.start = new Date()
@@ -53,7 +76,7 @@ export default class JasmineReporter {
         this.emit('test:start', test)
     }
 
-    specDone (test) {
+    specDone (test: TestStats & CustomReporterResult) {
         /**
          * excluded tests are treated as pending tests
          */
@@ -61,7 +84,7 @@ export default class JasmineReporter {
             test.status = 'pending'
         }
 
-        if (test.failedExpectations.length) {
+        if (test.failedExpectations?.length) {
             let errors = test.failedExpectations
             if (this.shouldCleanStack) {
                 errors = test.failedExpectations.map(x => this.cleanStack(x))
@@ -73,42 +96,43 @@ export default class JasmineReporter {
             test.error = errors[0]
         }
 
-        const e = 'test:' + test.status.replace(/ed/, '')
+        const e = 'test:' + test.status?.replace(/ed/, '')
         test.type = 'test'
-        test.duration = new Date() - this.testStart
+        test.duration = new Date() - this.testStart // TODO F
         this.emit(e, test)
         this.failedCount += test.status === 'failed' ? 1 : 0
         this.emit('test:end', test)
     }
 
-    suiteDone (suite) {
+    suiteDone (suite: SuiteStats & CustomReporterResult) {
         const parentSuite = this.parent[this.parent.length - 1]
 
         /**
          * in case there is a runtime error within one of the specs
          * create an empty test to attach the error to it
          */
-        if (parentSuite.tests === 0 && suite.failedExpectations.length) {
+        if (parentSuite.tests === 0 && suite.failedExpectations?.length) {
             const id = 'spec' + Math.random()
+            // TODO F
             this.specStarted({
                 id,
                 description: '<unknown test>',
                 fullName: '<unknown test>',
-                start: Date.now()
+                start: new Date(Date.now())
             })
             this.specDone({
                 id,
                 description: '<unknown test>',
                 fullName: '<unknown test>',
                 failedExpectations: suite.failedExpectations,
-                start: Date.now(),
+                start: new Date(Date.now()),
                 status: 'failed'
             })
         }
 
         this.parent.pop()
         suite.type = 'suite'
-        suite.duration = new Date() - this.suiteStart
+        suite.duration = new Date() - this.suiteStart // TODO F
         this.emit('suite:end', suite)
         this.startedSuite = null
     }
